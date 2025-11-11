@@ -5,6 +5,7 @@ const router = express.Router();
 router.use('/auth', require('./auth'));
 router.use('/wallet', require('./wallet'));
 router.use('/agent', require('./agent'));
+router.use('/rebalance', require('./rebalance'));
 router.use('/test', require('./test'));
 
 // health passthrough
