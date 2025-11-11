@@ -112,6 +112,56 @@ class WebSocketGateway {
         });
 
         logger.info('WebSocket server initialized');
+        
+        // Subscribe to Redis pub/sub channel for agent status updates
+        this._subscribeToStatusUpdates();
+    }
+
+    // Subscribe to Redis channel for real-time status updates from Agent
+    async _subscribeToStatusUpdates() {
+        try {
+            const ioredis = redis.getIoredis?.();
+            if (!ioredis) {
+                logger.warn('ioredis not available, status update subscription skipped');
+                return;
+            }
+
+            // Create a separate subscriber connection
+            const subscriber = ioredis.duplicate();
+            
+            subscriber.on('message', async (channel, message) => {
+                try {
+                    if (channel === 'agent:rebalance:status') {
+                        const event = typeof message === 'string' ? JSON.parse(message) : message;
+                        const { jobId, status, userId } = event;
+                        
+                        logger.info(`[Redis Subscribe] Received status update: jobId=${jobId} status=${status} user=${userId}`);
+                        
+                        // Emit to connected user
+                        if (userId) {
+                            const room = `user:${userId}`;
+                            this.io.to(room).emit(REBALANCE_EVENTS.PROCESSING, { jobId, status });
+                            logger.info(`[${REBALANCE_EVENTS.PROCESSING}] jobId=${jobId} user=${userId}`);
+                        }
+                    }
+                } catch (err) {
+                    logger.error(`Failed to handle status update from Redis: ${err.message}`);
+                }
+            });
+
+            subscriber.on('error', (err) => {
+                logger.error(`Redis subscriber error: ${err.message}`);
+            });
+
+            subscriber.on('subscribe', (channel, count) => {
+                logger.info(`[Redis Subscribe] Subscribed to ${channel} (total: ${count})`);
+            });
+
+            // Subscribe to the status channel
+            await subscriber.subscribe('agent:rebalance:status');
+        } catch (err) {
+            logger.error(`Failed to setup Redis status subscription: ${err.message}`);
+        }
     }
 
     // emitJobCreated: emit a rebalance-created event to a specific user's room
