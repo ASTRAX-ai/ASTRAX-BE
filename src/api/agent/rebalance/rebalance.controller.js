@@ -3,6 +3,7 @@ const redis = require('../../../lib/redis');
 const metrics = require('../../../lib/metrics');
 const gateway = require('../../../lib/gateway');
 const jobStatus = require('../../../lib/jobStatus');
+const logger = require('../../../lib/logger');
 
 // POST /api/agent/rebalance
 // Body: { /* arbitrary payload for the agent to act on */ }
@@ -43,6 +44,11 @@ async function requestRebalance(req, res) {
     // Persist job metadata to Redis (TTL 24h)
     const jobKey = `agent:rebalance:job:${jobId}`;
     await redis.set(jobKey, jobRecord, 24 * 60 * 60);
+
+    // LPUSH jobId to tracking queue (for agent to monitor)
+    const queueListKey = 'agent:rebalance:jobs';
+    await redis.rpush(queueListKey, jobId);
+    logger.info(`LPUSH jobId=${jobId} to queue=${queueListKey}`);
 
     // Record metrics
     await metrics.incrementCounter('jobs');
